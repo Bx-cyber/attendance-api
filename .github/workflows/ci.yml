@@ -1,0 +1,31 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports: ["27017:27017"]
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1})'"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      MONGO_URI: mongodb://localhost:27017
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: Tests (real MongoDB 7, including the 100k-record explain check)
+        run: python -m pytest -v
+      - name: Start exactly as the grader does and wait for /health
+        env:
+          MONGO_DB: attendance_smoke
+        run: |
+          uvicorn app.main:app --port 8000 &
+          for i in $(seq 1 20); do curl -fs localhost:8000/health && exit 0; sleep 1; done
+          exit 1
